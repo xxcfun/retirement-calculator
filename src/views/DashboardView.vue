@@ -1,34 +1,43 @@
 <script setup>
-import { computed, defineAsyncComponent, ref } from 'vue'
-import { Eye, EyeOff, Plus, Share2 } from '@lucide/vue'
+import { computed, defineAsyncComponent, reactive, ref } from 'vue'
+import { ArrowRight, Eye, EyeOff, RotateCcw, Share2 } from '@lucide/vue'
 import { useAssetStore } from '../stores/asset'
 import { useAppStore } from '../stores/app'
-import { useRecordsStore } from '../stores/records'
 import { calculateMonthlyCashFlow, formatDuration } from '../utils/calculate'
 import { formatMoney } from '../utils/format'
 import MetricCard from '../components/common/MetricCard.vue'
-import RecordForm from '../components/records/RecordForm.vue'
-import TrendChart from '../components/charts/TrendChart.vue'
 import BidirectionalProgress from '../components/dashboard/BidirectionalProgress.vue'
-import BaseModal from '../components/common/BaseModal.vue'
+
 const ShareCardModal = defineAsyncComponent(() => import('../components/share/ShareCardModal.vue'))
-const asset = useAssetStore(); const app = useAppStore(); const records = useRecordsStore(); const quickType = ref(''); const shareOpen = ref(false); const notice = ref('')
+const asset = useAssetStore(); const app = useAppStore(); const errors = reactive({}); const shareOpen = ref(false); const notice = ref('')
 const result = computed(() => asset.dynamicResult); const privacy = computed(() => app.settings.privacyMode); const money = value => formatMoney(value, privacy.value)
-const chartData = computed(() => result.value.timeline.filter(x => x.month === 1 || x.month % 12 === 0 || x.month === result.value.timeline.length))
-const stage = computed(() => asset.config.totalDebt > 0 ? '负债偿还阶段' : result.value.totalMonths === 0 ? '已达到退休目标' : '财富积累阶段')
-const motivation = computed(() => asset.config.totalDebt > 0 ? '先上岸，再自由。' : asset.progress >= 100 ? '恭喜，你已经达到退休财富目标。' : asset.progress >= 80 ? '距离自由只剩最后一段路。' : asset.progress >= 50 ? '复利正在慢慢成为你的队友。' : asset.progress >= 20 ? '你已经走过最难的起步阶段。' : '自由之路，刚刚开始。')
-async function saveQuick(data) { try { await records.add({ ...data, type: quickType.value }); quickType.value = ''; notice.value = '记录已保存，资产与退休结果已同步更新。' } catch (e) { notice.value = e.message } }
+const fields = [
+  ['retirementTarget', '退休目标', '希望攒到的净资产', '元'], ['currentAssets', '当前资产', '现金、存款和投资总额', '元'],
+  ['totalDebt', '当前负债', '房贷、消费贷等剩余金额', '元'], ['monthlySalary', '每月收入', '税后月工资', '元/月'],
+  ['monthlyExpense', '每月支出', '日常固定消费', '元/月'], ['monthlyDebtPayment', '每月还款', '计划用于还债的金额', '元/月'],
+]
+function update(key, event) {
+  const value = Number(event.target.value)
+  if (!Number.isFinite(value) || value < 0) { errors[key] = '请输入不小于 0 的金额'; return }
+  const ok = asset.updateConfig({ [key]: Math.round(value) })
+  errors[key] = ok ? '' : asset.fieldErrors[key] || '请输入有效金额'
+  if (ok) notice.value = '已自动保存并重新计算'
+}
+function startBlank() { asset.useBlankPlan(); notice.value = '已切换为空白计划，请填写你的数据' }
 </script>
-<template><div class="page">
-  <header class="page-header"><div><p class="eyebrow">RETIREMENT OVERVIEW</p><h1>退休概览</h1><p>按照现在的生活方式，你距离财务自由还有多远？</p></div><button class="icon-button" :aria-label="privacy ? '显示金额' : '隐藏金额'" @click="app.setPrivacy(!privacy)"><EyeOff v-if="privacy"/><Eye v-else/></button></header>
-  <div v-if="asset.config.isDemo" class="demo-banner"><div><strong>当前展示的是演示数据</strong><p>开始前请选择保留示例参数，或清空后录入自己的数据。</p></div><div><button class="ghost" @click="asset.useBlankPlan">使用空白计划</button><button class="primary" @click="asset.keepDemo">保留并开始</button></div></div>
-  <p v-if="records.error" class="notice warning">{{ records.error }}</p><p v-if="notice" class="notice">{{ notice }}</p>
-  <section class="hero-card"><div><span>距离财务自由还有</span><h2>{{ result.reachable ? formatDuration(result.totalMonths) : '当前计划暂不可达' }}</h2><p>{{ result.reachable ? `预计 ${result.retirementDate.replace('-', '年')}月达到退休目标` : '试试调整收入、消费、还款或投资参数' }}</p></div><div class="hero-actions"><span class="stage-pill">{{ stage }}</span><button class="secondary" @click="shareOpen = true"><Share2 :size="18"/>生成退休卡片</button></div></section>
-  <section class="metric-grid"><MetricCard label="当前净资产" :value="money(asset.currentNetAsset)" hint="资产减去负债"/><MetricCard label="当前负债" :value="money(asset.config.totalDebt)" tone="danger"/><MetricCard label="退休目标" :value="money(asset.config.retirementTarget)"/><MetricCard label="月净结余" :value="money(calculateMonthlyCashFlow(asset.config))" hint="未含年度事件"/></section>
+
+<template><div class="page plan-page">
+  <header class="page-header"><div><p class="eyebrow">RETIREMENT PLAN</p><h1>我的退休计划</h1><p>填写关键数字，结果会自动更新。</p></div><button class="icon-button" :aria-label="privacy ? '显示金额' : '隐藏金额'" @click="app.setPrivacy(!privacy)"><EyeOff v-if="privacy"/><Eye v-else/></button></header>
+  <div v-if="asset.config.isDemo" class="demo-banner"><div><strong>这是示例计划</strong><p>你可以直接修改下方数字，或从空白计划开始。</p></div><div><button class="ghost" @click="startBlank"><RotateCcw :size="18"/>从空白开始</button><button class="primary" @click="asset.keepDemo">使用示例看看</button></div></div>
+  <p v-if="notice" class="save-status" role="status">{{ notice }}</p>
+  <section class="planner-layout">
+    <article class="card plan-form-card"><div class="section-title"><div><h2>你的关键数据</h2><p>只需填写 6 项，高级参数可稍后调整</p></div></div>
+      <div class="plan-fields"><label v-for="field in fields" :key="field[0]"><span>{{ field[1] }}</span><small>{{ field[2] }}</small><div class="input-unit"><input :value="asset.config[field[0]]" type="number" min="0" step="1" inputmode="decimal" :aria-invalid="Boolean(errors[field[0]])" :aria-describedby="errors[field[0]] ? `${field[0]}-error` : undefined" @input="update(field[0], $event)"><em>{{ field[3] }}</em></div><small v-if="errors[field[0]]" :id="`${field[0]}-error`" class="field-error">{{ errors[field[0]] }}</small></label></div>
+      <RouterLink class="advanced-link" to="/settings">调整奖金、投资收益率等高级参数 <ArrowRight :size="17"/></RouterLink>
+    </article>
+    <aside class="result-panel" aria-live="polite"><span>按当前计划，你距离退休还有</span><h2>{{ result.reachable ? formatDuration(result.totalMonths) : '暂时无法达到' }}</h2><p>{{ result.reachable ? `预计在 ${result.retirementDate.replace('-', ' 年 ')} 月达到目标` : '请增加收入、减少支出或降低目标后再试' }}</p><div class="result-divider"/><div class="result-row"><span>当前净资产</span><strong>{{ money(asset.currentNetAsset) }}</strong></div><div class="result-row"><span>每月结余</span><strong>{{ money(calculateMonthlyCashFlow(asset.config)) }}</strong></div><button class="secondary share-button" @click="shareOpen = true"><Share2 :size="18"/>分享计算结果</button></aside>
+  </section>
+  <section class="metric-grid compact-metrics"><MetricCard label="当前资产" :value="money(asset.config.currentAssets)"/><MetricCard label="当前负债" :value="money(asset.config.totalDebt)" tone="danger"/><MetricCard label="退休目标" :value="money(asset.config.retirementTarget)"/><MetricCard label="完成进度" :value="`${asset.progress}%`"/></section>
   <BidirectionalProgress :value="asset.currentNetAsset" :target="asset.config.retirementTarget" :privacy="privacy"/>
-  <section class="two-col"><article class="card"><div class="section-title"><div><h2>退休时间拆解</h2><p>静态基准与动态复利使用同一资产负债口径</p></div></div><div class="duration-grid"><div><span>负债阶段</span><strong>{{ formatDuration(result.debtMonths) }}</strong></div><div><span>财富阶段</span><strong>{{ formatDuration(result.wealthMonths) }}</strong></div><div><span>静态测算</span><strong>{{ asset.staticResult.reachable ? formatDuration(asset.staticResult.totalMonths) : '不可达' }}</strong></div><div><span>动态测算</span><strong>{{ result.reachable ? formatDuration(result.totalMonths) : '不可达' }}</strong></div></div><p class="model-note">简化模型：第一版不计算债务利息；通胀仅提高退休目标，不重复提高消费。</p></article><article class="card"><h2>快速记账</h2><p>已发生的记录只更新当前资产一次，不会重复进入未来预测。</p><div class="quick-actions"><button class="primary" @click="quickType = 'income'"><Plus :size="18"/>记录收入</button><button class="secondary" @click="quickType = 'expense'"><Plus :size="18"/>记录支出</button></div></article></section>
-  <section class="card"><div class="section-title"><div><h2>未来资产趋势</h2><p>净资产与动态退休目标的逐年变化</p></div></div><TrendChart v-if="chartData.length" :data="chartData"/><p v-else class="empty">暂无可展示的未来数据</p></section>
-  <section class="card scenario-section"><div class="section-title"><div><h2>怎样可以更早退休？</h2><p>{{ motivation }}</p></div><span class="progress-badge">完成 {{ asset.progress }}%</span></div><div class="scenario-grid"><article v-for="item in asset.scenarios" :key="item.key"><strong>{{ item.label }}</strong><p v-if="item.result.reachable">预计 {{ formatDuration(item.result.totalMonths) }}退休</p><small v-if="item.monthsEarlier">可提前 {{ formatDuration(item.monthsEarlier) }}</small><small v-else>当前情景暂无提前</small></article></div></section>
-  <BaseModal v-if="quickType" :title="quickType === 'income' ? '记录收入' : '记录支出'" @close="quickType = ''"><RecordForm :record="{ type: quickType }" @save="saveQuick" @cancel="quickType = ''"/></BaseModal>
   <ShareCardModal v-if="shareOpen" :result="result" :target="asset.config.retirementTarget" :assets="asset.config.currentAssets" :progress="asset.progress" @close="shareOpen = false"/>
 </div></template>

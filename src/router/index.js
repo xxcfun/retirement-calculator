@@ -4,8 +4,8 @@ import { beginNavigation, failNavigation, finishNavigation } from './navigationF
 const routes = [
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', component: () => import('../views/DashboardView.vue'), meta: { title: '退休概览' } },
-  { path: '/records', component: () => import('../views/RecordsView.vue'), meta: { title: '收支台账' } },
-  { path: '/analysis', component: () => import('../views/AnalysisView.vue'), meta: { title: '数据分析' } },
+  { path: '/records', redirect: '/dashboard' },
+  { path: '/analysis', redirect: '/dashboard' },
   { path: '/settings', component: () => import('../views/SettingsView.vue'), meta: { title: '参数设置' } },
 ]
 const router = createRouter({ history: createWebHistory(import.meta.env.BASE_URL), routes, scrollBehavior: () => ({ top: 0 }) })
